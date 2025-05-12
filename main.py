@@ -3,8 +3,10 @@ import json
 import time
 import random
 import typing
+import pathlib
 import datetime
 import requests
+import subprocess
 
 P = typing.ParamSpec('P')
 R = typing.TypeVar('R')
@@ -17,6 +19,8 @@ class Utils:
 
     with open('./proxies.txt', 'r', encoding='UTF-8') as file:
         proxies: list[str] = file.read().strip().split('\n')
+
+    iteration = 0
 
     @staticmethod
     def get_http_proxies() -> str:
@@ -95,6 +99,112 @@ class CodeAggregator:
             Utils.error('Unknown error occurred while writing "{}" file: {}', path, e)
             return False
         return True
+
+    # TODO: доделать, учесть все случаи и т.д.
+    @staticmethod
+    @Utils.logged
+    def build_project(project_path: str, output_name: str = "app") -> None:
+        project_root = pathlib.Path(project_path).resolve()
+        build_dir = project_root / "build"
+        build_dir.mkdir(exist_ok=True)
+
+        output_name = output_name.removesuffix('.exe') + '.exe'
+
+        source_exts = {'.c', '.cpp', '.cc', '.cxx', '.c++'}
+        headers_exts = {'.h', '.hpp', '.hh', '.hxx'}
+
+        sources = []
+        include_dirs = set()
+
+        for root, _, files in os.walk(project_root):
+            if any(i in root for i in ('test', 'build')):
+                continue
+            for file in files:
+                path = pathlib.Path(root) / file
+                ext = path.suffix.lower()
+
+                if ext in source_exts:
+                    sources.append(str(path))
+                elif ext in headers_exts:
+                    include_dirs.add(str(path.parent))
+
+        if not sources:
+            raise RuntimeError("No source files found!")
+
+        compiler = "clang++" if any(f.endswith(('.cpp', '.cc', '.cxx')) for f in sources) else "clang"
+        flags = [
+            "-std=c++17" if compiler.endswith("++") else "-std=c11",
+            "-O2",
+            "-Wall",
+            "-Wextra",
+            "-pedantic"
+        ]
+        flags += [f"-I{include}" for include in include_dirs]
+
+        cmd = [
+            compiler,
+            *sources,
+            *flags,
+            "-o", str(build_dir / output_name)
+        ]
+        result = subprocess.run(
+            cmd,
+            cwd=project_root,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            error_msg = f"Build failed!\nError:\n{result.stderr}"
+            raise RuntimeError(error_msg)
+
+        print(f"Successfully built: {build_dir / output_name}")
+        print("Build output:", result.stdout)
+
+    @staticmethod
+    @Utils.logged
+    def init_cmake(path: str) -> bool:
+        if not os.path.exists(path):
+            Utils.error('Path "{}" does not exist. CMake initialization can not be done', path)
+            return False
+        try:
+            subprocess.Popen(['cmake', '-DCMAKE_C_COMPILER=clang', '-DCMAKE_CXX_COMPILER=clang++',
+                              '-G', 'Ninja', '-S', path, '-B', os.path.join(path, 'build')])
+            return True
+        except Exception as e:
+            Utils.error('Unexpected error: {}', e)
+            return False
+
+    @staticmethod
+    @Utils.logged
+    def run_cmake_build(path: str) -> str:
+        try:
+            process = subprocess.Popen(
+                ['cmake', '--build', os.path.join(path, 'build')],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                encoding='utf-8',
+                errors='replace'
+            )
+            full_output = []
+            has_errors = False
+            while True:
+                line = process.stdout.readline()
+                if line == '' and process.poll() is not None:
+                    break
+                if line:
+                    full_output.append(line)
+                    if 'error:' in line.lower() or 'failed:' in line.lower():
+                        has_errors = True
+            output_text = ''.join(full_output)
+            if process.returncode != 0 or has_errors is True:
+                return output_text
+            return 'No errors'
+        except FileNotFoundError:
+            return 'File not found'
+        except Exception as e:
+            return f'Unexpected error: {e}'
 
 
 class ModelAggregator:

@@ -2,3 +2,4 @@ settings.config
 .idea
 venv
 proxies.txt
+logs.txt

@@ -37,7 +37,7 @@ def get_msvc_env(vcvars_path: Path):
     return env
 
 
-def find_source_files(project_root: Path) -> tuple[list[str], list[str]]:
+def find_cpp_source_files(project_root: Path) -> tuple[list[str], list[str]]:
     source_exts = {'.c', '.cpp', '.cc', '.cxx', '.c++', '.s', '.asm'}
     header_exts = {'.h', '.hpp', '.hh', '.hxx', '.inc'}
 
@@ -59,7 +59,7 @@ def find_source_files(project_root: Path) -> tuple[list[str], list[str]]:
     return sources, list(include_dirs)
 
 
-def select_compiler(compiler: str, sources: list[str]) -> dict:
+def select_cpp_compiler(compiler: str, sources: list[str]) -> dict:
     if compiler == 'auto':
         has_cpp = any(file.endswith(('.cpp', '.cc', '.cxx', '.c++')) for file in sources)
         compiler = 'clang++' if has_cpp else 'clang'
@@ -81,7 +81,7 @@ def select_compiler(compiler: str, sources: list[str]) -> dict:
     }
 
 
-def build_compile_command(compiler_info: dict,
+def build_cpp_compile_command(compiler_info: dict,
                           sources: list[str],
                           include_dirs: list[str],
                           output_path: str) -> list[str]:
@@ -120,7 +120,7 @@ def build_compile_command(compiler_info: dict,
     return cmd
 
 
-def compile_project(project_path: str, compiler: str = 'auto', output_name: str = 'out') -> dict:
+def compile_cpp_project(project_path: str, compiler: str = 'auto', output_name: str = 'out') -> dict:
     '''
     :return: {
         'success': bool,
@@ -155,14 +155,14 @@ def compile_project(project_path: str, compiler: str = 'auto', output_name: str 
         build_dir = project_root / 'bin'
         build_dir.mkdir(exist_ok=True)
 
-        sources, include_dirs = find_source_files(project_root)
+        sources, include_dirs = find_cpp_source_files(project_root)
 
         if not sources:
             raise RuntimeError('No source files found in project directory')
 
-        compiler_info = select_compiler(compiler, sources)
+        compiler_info = select_cpp_compiler(compiler, sources)
 
-        compile_cmd = build_compile_command(
+        compile_cmd = build_cpp_compile_command(
             compiler_info,
             sources,
             include_dirs,

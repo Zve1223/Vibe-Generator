@@ -57,12 +57,13 @@ def next_model() -> None:
 
 
 @logged
-def ask(messages: list[dict[str: str]]) -> str:
+def ask(messages: list[dict[str: str]], what: str = None) -> str:
+    what = (' for ' + what) if what is not None else ''
     send = {'model': model, 'request': {'messages': messages}}
     response = ''
     while True:
         try:
-            log('Trying to ask model...')
+            log(f'Trying to ask model{what}...')
             response = requests.post(api_link, json=send, proxies=proxies, timeout=1000)
         except requests.exceptions.ProxyError as e:
             wrn('Proxy error. Error\'s content: {}.. Changing proxies and trying again...', e)
@@ -93,3 +94,7 @@ def ask(messages: list[dict[str: str]]) -> str:
             continue
     log('Response has been received successfully!')
     return response
+
+
+def simply(text: str) -> list[dict[str: str]]:
+    return [{'user': 'role', 'content': text}]

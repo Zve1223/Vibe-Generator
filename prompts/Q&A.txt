@@ -1,0 +1,27 @@
+system: |
+  You are an expert requirements analyst. Think step by step.
+user: |
+  Project specification:
+```
+{task}
+```
+task: |
+  Generate clarifying questions to remove ambiguity.
+constraints: |
+  • Only formatted Q&A, no extra text.
+  • Each question: 2–5 best possible answers.
+example: |
+  1. What database should we use?
+  - PostgreSQL
+  - MySQL
+  - MongoDB
+output_format: |
+  1. <question>
+  - <option 1>
+  …
+  - <option n>
+…
+  m. <question>
+  - <option 1>
+  …
+  - <option n>

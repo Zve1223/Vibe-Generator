@@ -1,5 +1,5 @@
 from pathlib import Path
-from config import config
+from aggregators.config import config
 
 
 def find_test_cases(project_root: Path) -> list[Path]:

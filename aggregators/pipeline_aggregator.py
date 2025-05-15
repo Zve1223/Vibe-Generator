@@ -1,9 +1,38 @@
 import os
 import json
-from config import config
-from model_aggregator import ask, simply
-from file_aggregator import read_from_file, write_to_file
-from utils import log, wrn, err, logged, get_project_path, query_context
+from aggregators.config import config
+from aggregators.model_aggregator import ask, simply
+from aggregators.utils import log, wrn, err, logged,\
+    query_context, read_from_file, write_to_file, get_prompt
+from aggregators.parse_aggregator import parse_qa
+
+
+@logged
+def specify_task() -> bool:
+    response = ask(simply(query_context(get_prompt('Q&A'))), 'task refine')  # TODO: prompt
+    questions = parse_qa(response)
+    if not questions or any(not i for i in questions):
+        return False
+    answers = []
+    for i, question in enumerate(questions):
+        to_ask = f'{i + 1}/{len(questions)}. {question[0]}\n' \
+                 f'    {f"{chr(10)}    ".join(f"{j}. {a}" for j, a in enumerate(question[1:], 1))}\n' \
+                 f'    {len(question)}. Custom answer!\n' \
+                 '>>> '
+        answer = input(to_ask).strip()
+        while not (answer.isdigit() and 1 <= int(answer) <= len(question)):
+            print(f'Wrong answer! Please, enter number between 1 and {len(questions)}!')
+            answer = input().strip()
+        answer = int(answer)
+        if answer == len(questions):
+            answer = input('Enter your custom answer: ')
+        else:
+            answer = questions[i][answer]
+        answers.append(answer)
+    qa = '\n'.join(f'Q: {q[0]}\nA: {a}' for q, a in zip(questions, answers))
+    if write_to_file('Q&A.txt', qa) is False:
+        return False
+    return True
 
 
 @logged

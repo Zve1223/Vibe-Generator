@@ -1,14 +1,12 @@
 import os
 import subprocess
 from pathlib import Path
-from config import config, compilers
-from parse_aggregator import parse_compiler_output
+from .config import config, compilers
+from .parse_aggregator import parse_compiler_output
 
 
 def find_vcvarsall():
-    vswhere = config.get('MSVC.paths', {}).get('VSWHERE')
-    if vswhere is None:
-        return None
+    vswhere = Path(config['VSWHERE'])
     if Path(vswhere).exists():
         result = subprocess.run(
             [vswhere, '-latest', '-property', 'installationPath'],
@@ -82,9 +80,9 @@ def select_cpp_compiler(compiler: str, sources: list[str]) -> dict:
 
 
 def build_cpp_compile_command(compiler_info: dict,
-                          sources: list[str],
-                          include_dirs: list[str],
-                          output_path: str) -> list[str]:
+                              sources: list[str],
+                              include_dirs: list[str],
+                              output_path: str) -> list[str]:
     is_cpp = any(f.endswith(('.cpp', '.cc', '.cxx')) for f in sources)
     compiler = compiler_info['cpp'] if is_cpp else compiler_info['c']
 
@@ -96,11 +94,9 @@ def build_cpp_compile_command(compiler_info: dict,
         std = f'-std={compiler["cpp_version"]}' if is_cpp else f'-std={compiler["c_version"]}'
         cmd.append(std)
     else:
-        vs_path = r'C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30133\include'
-        sdk_path = r'C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\ucrt'
         cmd += [
-            f'/I{config.get("MSVC.paths", {}).get("VS_INCLUDE", vs_path)}',
-            f'/I{config.get("MSVC.paths", {}).get("WIN_SDK_INCLUDE", sdk_path)}',
+            f'/I{config.get("VS_INCLUDE")}',
+            f'/I{config.get("WIN_SDK_INCLUDE")}',
             f'/std:{compiler["cpp_version"]}'
         ]
 

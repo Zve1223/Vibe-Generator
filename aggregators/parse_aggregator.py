@@ -141,3 +141,14 @@ def parse_gtest_output(output: str) -> dict:
                 current_test = None
 
     return result
+
+
+def parse_qa(text: str) -> list[list[str]]:
+    pattern = r'(\d+\.\s*.*?)(?=\s*\d+\.|\Z)'
+    questions = re.findall(pattern, text, re.DOTALL)
+    result = []
+    for q in questions:
+        question = re.sub(r'^\d+\.\s*', '', q.split('\n')[0]).strip()
+        answers = [ans.strip() for ans in re.findall(r'-\s*(.*?)\s*$', q, re.MULTILINE)]
+        result.append([question] + answers)
+    return result

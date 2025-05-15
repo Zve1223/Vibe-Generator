@@ -1,7 +1,7 @@
 from aggregators.utils import get_http_proxies, get_https_proxies, logged, log, wrn
 from aggregators import utils
 import requests
-from aggregators.config import api_link, hi_message
+from aggregators.config import api_link, config
 from time import sleep
 
 proxies: dict[str: str, str: str] = {'http': get_http_proxies(), 'https': get_https_proxies()}
@@ -14,25 +14,19 @@ def next_proxies() -> None:
 
 
 @logged
-def next_model() -> None:
+def next_model(messages: list[dict[str: str, str: str]]) -> requests.Response:
     @logged
-    def search_cycle() -> str | None:
+    def search_cycle() -> requests.Response | None:
         for model in utils.all_models[utils.model == utils.all_models[0]:]:
             utils.model = model
             log('Trying to get response from {}...', model)
-            send = {'model': model, 'request': {'messages': [{'role': 'user', 'content': hi_message}]}}
+            send = {'model': model, 'request': {'messages': messages}}
             response_ = requests.post(api_link, json=send)
-            import json
-            try:
-                print(json.dumps(response_.json(), indent=4, ensure_ascii=False))
-            except Exception as e:
-                print(e)
-                print(response_.content)
             if response_.status_code != 200:
                 wrn('Response has invalid status code {}', response_.status_code)
                 continue
             try:
-                response_ = response_.json()['choices'][0]['message']['content']
+                response_.json()['choices'][0]['message']['content']
             except Exception as e:
                 wrn('Response has invalid format: {}', e)
                 continue
@@ -42,15 +36,17 @@ def next_model() -> None:
     log('Selecting new model...')
     while True:
         response = search_cycle()
-        if isinstance(response, str):
+        if response is not None:
             break
-    log('New model was selected: "{}"!', response.__repr__())
+    log('New model was selected: {}!', (response.json()['choices'][0]['message']['content'][:29] + '...').__repr__())
+    return response
 
 
 @logged
 def ask(messages: list[dict[str: str]], what: str = None) -> str:
     what = (' for ' + what) if what is not None else ''
     send = {'model': utils.model, 'request': {'messages': messages}}
+    result = None
     response = None
     while True:
         try:
@@ -69,23 +65,25 @@ def ask(messages: list[dict[str: str]], what: str = None) -> str:
         except Exception as e:
             wrn('Unexpected error. Error\'s content: {}. Trying again...', e)
             continue
-        if not response:
-            print(response.content)
-            wrn('There is no response. Switching models and trying again...')
-            next_model()
-            continue
-        if response.status_code != 200:
-            wrn('Invalid status code: {}. Switching models and trying again...', response.status_code)
-            next_model()
-            continue
         try:
-            response = response.json()['choices'][0]['message']['content']
+            result = response.json()['choices'][0]['message']['content']
         except Exception as e:
             wrn('Incorrect response format: {}', e)
             wrn('Response\'s content: {}', response.text)
-            continue
+            if not response:
+                wrn('There is no response. Switching models and trying again...')
+            elif response.status_code != 200:
+                wrn('Invalid status code: {}. Switching models and trying again...', response.status_code)
+            if config['MODEL'] == 'auto':
+                response = next_model(messages)
+            else:
+                sleep(5)
+                continue
+            result = response.json()['choices'][0]['message']['content']
+        break
     log('Response has been received successfully!')
-    return response
+    utils.write_answer(response.json())
+    return result
 
 
 def simply(text: str, *, role: str = 'user') -> list[dict[str: str]]:

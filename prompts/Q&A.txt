@@ -1,3 +1,4 @@
+```yaml
 system: |
   You are an expert requirements analyst. Think step by step.
 user: |
@@ -6,10 +7,10 @@ user: |
 {task}
 ```
 task: |
-  Generate clarifying questions to remove ambiguity.
+  Generate clarifying questions to remove ambiguity and complete the task conditions
 constraints: |
-  • Only formatted Q&A, no extra text.
-  • Each question: 2–5 best possible answers.
+  - Only formatted Q&A, no extra text.
+  - Each question: 2–9 best possible answers.
 example: |
   1. What database should we use?
   - PostgreSQL
@@ -18,10 +19,11 @@ example: |
 output_format: |
   1. <question>
   - <option 1>
-  …
+  ...
   - <option n>
-…
+...
   m. <question>
   - <option 1>
-  …
+  ...
   - <option n>
+```

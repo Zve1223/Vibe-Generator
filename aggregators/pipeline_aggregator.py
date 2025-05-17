@@ -6,6 +6,7 @@ from aggregators.model_aggregator import ask, simply
 from aggregators.utils import *
 from aggregators.parse_aggregator import parse_qa
 import translate
+from aggregators.project_tree import ProjectTree
 
 
 @logged
@@ -31,7 +32,7 @@ def specify_task() -> bool:
                          '\n'.join(f'    {i}. {s}' for i, s in enumerate(translated[1:]))
             to_ask += '\nПеревод:\n' + translated
         except Exception as e:
-            wrn('Can not translate Q&A: {}', e)
+            wrn('Can not translate Q&A: {}', e[:29] + '...')
         answer = input(to_ask + '\n>>> ').strip()
         while not (answer.isdigit() and 0 <= int(answer) <= len(question)):
             print(f'Wrong answer! Please, enter number between 0 and {len(question)}!')
@@ -64,6 +65,8 @@ def get_full_project_structure() -> bool:
     response = ask(simply(query_context(get_prompt('ProjectStructure'))), 'project structure')
     if is_json(response) is False:
         return False
+    if ProjectTree(json.loads(response)).has_cycle is True:
+        return False
     if write_to_file('project_structure.json', response) is False:
         return False
     return True
@@ -71,21 +74,22 @@ def get_full_project_structure() -> bool:
 
 @logged
 def create_project_tree() -> bool:
-    def recursive_creator(path: str, d: dict) -> bool:
-        status = True
-        for key in d.keys():
-            if isinstance(d[key], dict):
-                if recursive_creator(os.path.join(path, key), d[key]['name']) is False:
-                    status = False
-            else:
-                if write_to_file(os.path.join(path, key), '') is False:
-                    status = False
-        return status
-
-    project_structure = read_from_file('project_structure.json')
-    if project_structure is None:
-        return False
-    project_structure: dict[str: list[str] | dict] = json.loads(project_structure)
-    if recursive_creator('.', project_structure) is False:
-        return False
+    # def recursive_creator(path: str, d: dict) -> bool:
+    #     status = True
+    #     for key in d.keys():
+    #         if isinstance(d[key], dict):
+    #             if recursive_creator(os.path.join(path, key), d[key]['name']) is False:
+    #                 status = False
+    #         else:
+    #             if write_to_file(os.path.join(path, key), '') is False:
+    #                 status = False
+    #     return status
+#
+    # project_structure = read_from_file('project_structure.json')
+    # if project_structure is None:
+    #     return False
+    # project_structure: dict[str: list[str] | dict] = json.loads(project_structure)
+    # if recursive_creator('.', project_structure) is False:
+    #     return False
+    create_project_structure(json.loads(read_from_file('project_structure.json')), project_path)
     return True

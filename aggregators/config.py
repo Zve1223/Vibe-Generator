@@ -19,7 +19,7 @@ all_models = [
 ]
 
 # Config loading
-config_path = Path(sys.argv[0]).parent / 'settings.config'
+config_path = Path(sys.argv[0]).parent / 'config.ini'
 general = configparser.ConfigParser()
 general.read(config_path)
 

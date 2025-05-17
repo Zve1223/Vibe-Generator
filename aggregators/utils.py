@@ -130,6 +130,18 @@ def write_to_file(path: str, content: str, absolute: bool = False, *, mode: str 
     return True
 
 
+@logged
+def create_project_structure(project_config: dict, root_dir: str = '.') -> None:
+    project_root = Path(root_dir)
+    project_root.mkdir(parents=True, exist_ok=True)
+    for module in project_config['project']['modules']:
+        module_dir = project_root / module['name']
+        module_dir.mkdir(exist_ok=True)
+        for file_info in module['files']:
+            file_path = module_dir / file_info['name']
+            file_path.with_suffix(f'.{file_info["type"]}').touch()
+
+
 def query_context(text: str) -> str:
     context = {}
     if '{task}' in text:

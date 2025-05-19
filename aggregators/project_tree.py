@@ -9,9 +9,10 @@ class ProjectTree:
 
     @dataclass(frozen=True)
     class _Node:
-        __slots__ = ('name', 'file_type', 'dependencies', 'dependents', 'depth')
+        __slots__ = ('name', 'file_type', 'path', 'dependencies', 'dependents', 'depth')
         name: str
         file_type: str
+        path: str  # Новое поле с путем
         dependencies: FrozenSet['ProjectTree._Node']
         dependents: FrozenSet['ProjectTree._Node']
         depth: int
@@ -22,67 +23,68 @@ class ProjectTree:
 
         @property
         def is_external(self) -> bool:
-            return self.name.startswith('<') or (self.name.endswith('.hpp') and not self.dependents)
+            return self.name.startswith('<')
 
     def __init__(self, project_data: Dict):
         self._project_data = project_data
         self._nodes = self._build_nodes()
 
     def _build_nodes(self) -> Dict[str, _Node]:
-        nodes = {}
         node_map = {}
 
-        # Первый проход: создание базовых узлов
-        for module in self._project_data['project']['modules']:
-            for file_info in module['files']:
-                name = file_info['name']
-                node_map[name] = {
-                    'name': name,
-                    'type': file_info['type'],
-                    'deps': file_info['deps'],
-                    'dependents': set()
+        # 1. Создаем узлы с ключами в формате "filename.ext"
+        for module in self._project_data["project"]["modules"]:
+            module_name = module["name"]
+            for file_info in module["files"]:
+                file_name = file_info["name"]
+                file_ext = file_info["type"]
+                file_key = f"{file_name.removesuffix('.' + file_ext)}.{file_ext}"
+
+                node = self._Node(
+                    name=file_name,
+                    file_type=file_ext,
+                    path=f"./{module_name}/{file_key}",
+                    dependencies=frozenset(),
+                    dependents=frozenset(),
+                    depth=0
+                )
+                node_map[file_key] = {  # Ключ только имя файла
+                    "node": node,
+                    "deps": [d.split('/')[-1] for d in file_info.get("deps", [])],  # Оставляем только имена
+                    "module": module_name
                 }
 
-        # Второй проход: разрешение зависимостей
-        for name, info in node_map.items():
-            dependencies = frozenset(
-                node_map[dep]['node']
-                for dep in info['deps']
-                if dep in node_map
-            )
-            node = self._Node(
-                name=name,
-                file_type=info['type'],
-                dependencies=dependencies,
+        # 2. Строим зависимости
+        resolved_nodes = {}
+        for file_key, info in node_map.items():
+            dependencies = []
+            for dep_name in info["deps"]:
+                if dep_name in node_map:
+                    dependencies.append(node_map[dep_name]["node"])
+
+            resolved_nodes[file_key] = self._Node(
+                name=info["node"].name,
+                file_type=info["node"].file_type,
+                path=info["node"].path,
+                dependencies=frozenset(dependencies),
                 dependents=frozenset(),
                 depth=0
             )
-            nodes[name] = node
-            node_map[name]['node'] = node
 
-        # Третий проход: обновление зависимостей
-        final_nodes = {}
-        for name, info in node_map.items():
-            dependents = frozenset(
-                node_map[dep_name]['node']
-                for dep_name, dep_info in node_map.items()
-                if name in dep_info['deps']
-            )
-
-            depth = 1
-            for dep in node_map[name]['deps']:
-                if dep in node_map:
-                    depth = max(depth, node_map[dep]['node'].depth + 1)
-
-            final_nodes[name] = self._Node(
-                name=name,
-                file_type=info['type'],
-                dependencies=nodes[name].dependencies,
-                dependents=dependents,
-                depth=depth
-            )
-
-        return final_nodes
+        # 3. Обновление обратных зависимостей
+        for file_key, node in resolved_nodes.items():
+            for dep in node.dependencies:
+                dep_node = resolved_nodes.get(dep.name)
+                if dep_node:
+                    resolved_nodes[dep.name] = self._Node(
+                        name=dep_node.name,
+                        file_type=dep_node.file_type,
+                        path=dep_node.path,
+                        dependencies=dep_node.dependencies,
+                        dependents=dep_node.dependents | {node},
+                        depth=dep_node.depth
+                    )
+        return resolved_nodes
 
     @cached_property
     def has_cycle(self) -> bool:

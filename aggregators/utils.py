@@ -1,13 +1,15 @@
 import json
+import traceback
 import typing
 import random
 import datetime
 from aggregators.config import *
+from aggregators.project_tree import ProjectTree
 
 P = typing.ParamSpec('P')
 R = typing.TypeVar('R')
 
-context = {
+context: dict[str: str | ProjectTree | dict] = {
     'task': config['TASK'],
     'model': all_models[0] if config['MODEL'] == 'auto' else config['MODEL']
 }
@@ -160,7 +162,7 @@ def query_context(text: str) -> str:
         else:
             pass  # TODO: error
     if '{project_structure}' in text:
-        project_structure = read_from_file('project_structure.json')
+        project_structure = json.dumps(context['project_structure'])
         if project_structure is not None:
             text = text.replace('{project_structure}', project_structure)
         else:
@@ -168,12 +170,12 @@ def query_context(text: str) -> str:
     return text
 
 
-def get_prompt(name: str) -> str | None:
+def prompt(name: str) -> str | None:
     path = Path(sys.argv[0]).parent / 'prompts' / (name + '.txt')
     if not path.exists() or not path.is_file():
         return None
     with open(path, 'r', encoding='UTF-8') as file:
-        return file.read()
+        return query_context(file.read())
 
 
 @logged
@@ -182,7 +184,23 @@ def write_answer(response: dict[str]) -> bool:
         wrn('There is no "id" in response to identify the answer')
         return False
     path = os.path.join(config['ANSWER_LOG'], response['id'].removeprefix('chat_') + '.txt')
-    with open(path, 'w', encoding='UTF-8') as file:
-        json.dump(response, file, indent=4, ensure_ascii=False)
+    try:
+        to_save = f'''
+CREATED: {response['created']}
+MODEL: {response['model']}
+PROMPT: {response['usage']['prompt_tokens']}
+COMPLETION: {response['usage']['completion_tokens']}
+REASON: {response['choices'][0]['finish_reason']}
+ROLE: {response['choices'][0]['message']['role']}
+MESSAGES:
+```
+{response['choices'][0]['message']['content']}
+```
+'''.strip()
+    except Exception as e:
+        wrn('can not write answer in common format: {}', e)
+        traceback.print_exc()
+        to_save = json.dumps(response, indent=4, ensure_ascii=False)
+    write_to_file(path, to_save)
     log('Answer "{}" was saved successfully!', response['id'].removeprefix('chat_'))
     return True

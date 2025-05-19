@@ -14,9 +14,9 @@ Requirements for your output:
 - Follow the schema illustrated in the example.
 - **Global rules** must include language, style guide (naming conventions and forbidden patterns).
 - **Modules** array must enumerate each logical module: general name, description, and its files.
-- For each file, include: name, type (extension), dependencies (list of ONLY local includes), brief description.
+- For each file, include: name, type (extension), dependencies, brief description.
 - **Module & file granularity:** split functionality into as many files/modules as makes sense and ensure each file's theoretical code length is around 100–200 lines (maximum 300).
-- Do not include test modules and files.
+- Do not include test modules and files!!!
 - Reflect every technical detail from the assignment.
 
 Example of expected JSON structure:

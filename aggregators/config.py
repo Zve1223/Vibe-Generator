@@ -76,16 +76,19 @@ if not os.path.isabs(general['DEFAULT']['WORKSPACE']):
 if not os.path.isabs(general['DEFAULT']['TASK']):
     general['DEFAULT']['TASK'] = str(main_path / general['DEFAULT']['TASK'])
 
-print('Choose section:\n    0. DEFAULT\n' + '\n'.join(f'    {i + 1}. {s}' for i, s in enumerate(general.sections())))
-answer = input('>>> ').strip()
-while not answer.isdigit() or not 0 <= int(answer) <= len(general.sections()):
-    print('Wrong answer format!')
+if len(general.sections()) > 1:
+    print('Choose section:\n  0. DEFAULT\n' + '\n'.join(f'  {i + 1}. {s}' for i, s in enumerate(general.sections())))
     answer = input('>>> ').strip()
-if answer == '0':
-    config = general['DEFAULT']
-    print('Why?.. Okay...')
+    while not answer.isdigit() or not 0 <= int(answer) <= len(general.sections()):
+        print('Wrong answer format!')
+        answer = input('>>> ').strip()
+    if answer == '0':
+        config = general['DEFAULT']
+        print('Why?.. Okay...')
+    else:
+        config = general[general.sections()[int(answer) - 1]]
 else:
-    config = general[general.sections()[int(answer) - 1]]
+    config = general[general.sections()[0]]
 
 compilers = ('gcc', 'clang', 'msvc')
 compilers = {c: {k.split('_', 1)[1]: v for k, v in config.items() if k.startswith(c.lower() + '_')} for c in compilers}

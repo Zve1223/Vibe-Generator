@@ -70,7 +70,7 @@ def ask(messages: list[dict[str: str]], what: str = None) -> str:
             result = response.json()['choices'][0]['message']['content']
         except Exception as e:
             wrn('Incorrect response format: {}', e)
-            wrn('Response\'s content: {}', response.text)
+            wrn('Response\'s content: {}', response.text.replace('\n', '\\n'))
             if not response:
                 wrn('There is no response. Switching models and trying again...')
             elif response.status_code != 200:

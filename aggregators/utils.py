@@ -1,16 +1,16 @@
-import os
-import sys
 import json
 import typing
 import random
 import datetime
-from pathlib import Path
 from aggregators.config import *
 
 P = typing.ParamSpec('P')
 R = typing.TypeVar('R')
 
-model = all_models[0] if config['MODEL'] == 'auto' else config['MODEL']
+context = {
+    'task': config['TASK'],
+    'model': all_models[0] if config['MODEL'] == 'auto' else config['MODEL']
+}
 
 
 def is_json(s: str) -> bool:
@@ -22,20 +22,21 @@ def is_json(s: str) -> bool:
 
 
 def get_http_proxies() -> str:
-    return ('http://' + random.choice(proxies)) if config['PROXIES'] else ''
+    return ('http://' + random.choice(context['proxies'])) if config['PROXIES'] else ''
 
 
 def get_https_proxies() -> str:
-    return ('https://' + random.choice(proxies)) if config['PROXIES'] else ''
+    return ('https://' + random.choice(context['proxies'])) if config['PROXIES'] else ''
 
 
 stack = []
 
 if config['PROXIES']:
     with open(config['PROXIES'], 'r', encoding='UTF-8') as file:
-        proxies: list[str] = file.read().strip().split('\n')
+        _: list[str] = file.read().strip().split('\n')
 else:
-    proxies = list[str]()
+    _ = list[str]()
+context['proxies'] = _
 
 iteration = 0
 
@@ -61,21 +62,24 @@ def logging(method: typing.Callable[P, str]) -> typing.Callable[P, str]:
 
 @logging
 def log(msg: str, *args, **kwargs) -> str:
-    line = f'{model:<17} | LOG ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg.format(*args, **kwargs).strip()
+    model, msg = context['model'], msg.format(*args, **kwargs).strip()
+    line = f'{model:<17} | LOG ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg
     print(line)
     return line
 
 
 @logging
 def wrn(msg: str, *args, **kwargs) -> str:
-    line = f'{model:<17} | WRN ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg.format(*args, **kwargs).strip()
+    model, msg = context['model'], msg.format(*args, **kwargs).strip()
+    line = f'{model:<17} | WRN ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg
     print(line)
     return line
 
 
 @logging
 def err(msg: str, *args, **kwargs) -> str:
-    line = f'{model:<17} | ERR ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg.format(*args, **kwargs).strip()
+    model, msg = context['model'], msg.format(*args, **kwargs).strip()
+    line = f'{model:<17} | ERR ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg
     print(line)
     return line
 
@@ -143,29 +147,25 @@ def create_project_structure(project_config: dict, root_dir: str = '.') -> None:
 
 
 def query_context(text: str) -> str:
-    context = {}
     if '{task}' in text:
-        if (project_path / 'task.md').exists():
-            task = read_from_file('task.md')
-        else:
-            task = read_from_file(config.get('TASK'))
+        task = read_from_file(context['task'])
         if task is not None:
-            context['task'] = task
+            text = text.replace('{task}', task)
         else:
             pass  # TODO: error
     if '{QnA}' in text:
         QnA = read_from_file('Q&A.txt')
         if QnA is not None:
-            context['QnA'] = QnA
+            text = text.replace('{QnA}', QnA)
         else:
             pass  # TODO: error
     if '{project_structure}' in text:
         project_structure = read_from_file('project_structure.json')
         if project_structure is not None:
-            context['project_structure'] = project_structure
+            text = text.replace('{project_structure}', project_structure)
         else:
             pass  # TODO: error
-    return text.format(**context).replace('{{', '{').replace('}}', '}')
+    return text
 
 
 def get_prompt(name: str) -> str | None:

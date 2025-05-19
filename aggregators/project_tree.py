@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 from typing import Tuple, Dict, FrozenSet, Iterator
 from functools import cached_property
+from collections import deque
 
 
 class ProjectTree:
-    __slots__ = ('_nodes', '_roots', '_sorted_order', '_project_data', '_metadata')
+    __slots__ = ('_project_data', '_nodes', '__dict__')
 
     @dataclass(frozen=True)
     class _Node:
@@ -26,15 +27,12 @@ class ProjectTree:
     def __init__(self, project_data: Dict):
         self._project_data = project_data
         self._nodes = self._build_nodes()
-        self._metadata = self._precompute_metadata()
-        self._roots = self._metadata['roots']
-        self._sorted_order = self._metadata['implementation_order']
 
     def _build_nodes(self) -> Dict[str, _Node]:
         nodes = {}
         node_map = {}
 
-        # First pass: create basic nodes
+        # Первый проход: создание базовых узлов
         for module in self._project_data['project']['modules']:
             for file_info in module['files']:
                 name = file_info['name']
@@ -45,7 +43,7 @@ class ProjectTree:
                     'dependents': set()
                 }
 
-        # Second pass: resolve dependencies
+        # Второй проход: разрешение зависимостей
         for name, info in node_map.items():
             dependencies = frozenset(
                 node_map[dep]['node']
@@ -62,7 +60,7 @@ class ProjectTree:
             nodes[name] = node
             node_map[name]['node'] = node
 
-        # Third pass: update dependents and depth
+        # Третий проход: обновление зависимостей
         final_nodes = {}
         for name, info in node_map.items():
             dependents = frozenset(
@@ -86,22 +84,16 @@ class ProjectTree:
 
         return final_nodes
 
-    def _precompute_metadata(self) -> Dict:
-        metadata = {
-            'has_cycle': False,
-            'max_depth': max(n.depth for n in self._nodes.values()) if self._nodes else 0,
-            'roots': tuple(node for node in self._nodes.values()
-                           if not node.dependents or all(d.is_external for d in node.dependencies)),
-            'implementation_order': self._calculate_order(),
-            'external_deps': sum(1 for n in self._nodes.values() for d in n.dependencies if d.is_external)
-        }
-
+    @cached_property
+    def has_cycle(self) -> bool:
         visited = set()
         recursion_stack = set()
+        cycle_found = False
 
         def dfs(node):
+            nonlocal cycle_found
             if node in recursion_stack:
-                metadata['has_cycle'] = True
+                cycle_found = True
                 return
             if node in visited:
                 return
@@ -115,32 +107,12 @@ class ProjectTree:
 
             recursion_stack.remove(node)
 
-        for root in metadata['roots']:
+        for root in self.roots:
             dfs(root)
+            if cycle_found:
+                break
 
-        return metadata
-
-    def _calculate_order(self) -> Tuple[_Node, ...]:
-        visited = set()
-        order = []
-
-        def dfs(node):
-            if node not in visited:
-                visited.add(node)
-                for dep in sorted(node.dependencies,
-                                  key=lambda x: (x.file_type, x.name)):
-                    if not dep.is_external:
-                        dfs(dep)
-                order.append(node)
-
-        for root in sorted(self.roots, key=lambda x: x.name):
-            dfs(root)
-
-        return tuple(order)
-
-    @cached_property
-    def has_cycle(self) -> bool:
-        return self._metadata['has_cycle']
+        return cycle_found
 
     @cached_property
     def total_files(self) -> int:
@@ -148,30 +120,102 @@ class ProjectTree:
 
     @cached_property
     def depth(self) -> int:
-        return self._metadata['max_depth']
+        return max((node.depth for node in self._nodes.values()), default=0)
 
     @cached_property
     def module_names(self) -> Tuple[str, ...]:
-        return tuple(module["name"] for module in self._project_data["project"]["modules"])
+        return tuple(module['name'] for module in self._project_data['project']['modules'])
 
     @cached_property
     def external_dependencies_count(self) -> int:
-        return self._metadata['external_deps']
+        return sum(1 for node in self._nodes.values() for dep in node.dependencies if dep.is_external)
 
     @cached_property
     def implementation_order(self) -> Tuple[str, ...]:
-        return tuple(node.name for node in self._sorted_order)
+        visited = set()
+        order = []
+
+        def dfs(node):
+            if node not in visited:
+                visited.add(node)
+                for dep in sorted(node.dependencies, key=lambda x: (x.file_type, x.name)):
+                    if not dep.is_external:
+                        dfs(dep)
+                order.append(node)
+
+        for root in sorted(self.roots, key=lambda x: x.name):
+            dfs(root)
+
+        return tuple(node.name for node in order)
+
+    @cached_property
+    def roots(self) -> Tuple[_Node, ...]:
+        return tuple(
+            node for node in self._nodes.values()
+            if not node.dependents or all(d.is_external for d in node.dependencies)
+        )
 
     @property
     def nodes(self) -> Tuple[_Node, ...]:
         return tuple(self._nodes.values())
 
-    @property
-    def roots(self) -> Tuple[_Node, ...]:
-        return self._metadata['roots']
+    def __iter__(self) -> Iterator[str]:
+        visited = set()
+        hpp_queue = deque()
+        order = []
 
-    def __iter__(self) -> Iterator[_Node]:
-        return iter(self._sorted_order)
+        # 1. Инициализация in_degree для всех узлов
+        in_degree = {node: 0 for node in self._nodes.values()}
+
+        # 2. Подсчёт зависимостей
+        for node in self._nodes.values():
+            for dep in node.dependencies:
+                if not dep.is_external and dep.file_type == 'hpp' and dep in in_degree:
+                    in_degree[node] += 1
+
+        # 3. Инициализация очереди
+        for node in self._nodes.values():
+            if node.file_type == 'hpp' and in_degree.get(node, 0) == 0:
+                hpp_queue.append(node)
+
+        # 4. Обработка .hpp
+        while hpp_queue:
+            node = hpp_queue.popleft()
+            if node in visited:
+                continue
+
+            visited.add(node)
+            order.append(node.name)
+
+            for dependent in node.dependents:
+                if dependent.file_type != 'hpp':
+                    continue
+
+                # Проверка существования ключа
+                if dependent in in_degree:
+                    in_degree[dependent] -= 1
+                    if in_degree[dependent] == 0:
+                        hpp_queue.append(dependent)
+
+        # 5. Добавление .cpp файлов
+        cpp_files = {}
+        for node in self._nodes.values():
+            if node.file_type == 'cpp':
+                base = node.name.split('.')[0]
+                cpp_files[base] = node.name
+
+        # 6. Формирование финального порядка
+        result = []
+        for name in order:
+            result.append(name)
+            base = name.split('.')[0]
+            if base in cpp_files:
+                result.append(cpp_files.pop(base))
+
+        # 7. Оставшиеся .cpp
+        result.extend(cpp_files.values())
+
+        return iter(result)
 
     def __getitem__(self, name: str) -> _Node:
         return self._nodes[name]

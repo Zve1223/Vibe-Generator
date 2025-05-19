@@ -9,6 +9,7 @@ proxies: dict[str: str, str: str] = {'http': get_http_proxies(), 'https': get_ht
 
 @logged
 def next_proxies() -> None:
+    global proxies
     proxies = {'http': get_http_proxies(), 'https': get_https_proxies()}
     log('Proxies were changed: {}', proxies)
 
@@ -17,7 +18,7 @@ def next_proxies() -> None:
 def next_model(messages: list[dict[str: str, str: str]]) -> requests.Response:
     @logged
     def search_cycle() -> requests.Response | None:
-        for model in utils.all_models[utils.model == utils.all_models[0]:]:
+        for model in utils.all_models[utils.context['model'] == utils.all_models[0]:]:
             utils.model = model
             log('Trying to get response from {}...', model)
             send = {'model': model, 'request': {'messages': messages}}
@@ -45,7 +46,7 @@ def next_model(messages: list[dict[str: str, str: str]]) -> requests.Response:
 @logged
 def ask(messages: list[dict[str: str]], what: str = None) -> str:
     what = (' for ' + what) if what is not None else ''
-    send = {'model': utils.model, 'request': {'messages': messages}}
+    send = {'model': utils.context['model'], 'request': {'messages': messages}}
     result = None
     response = None
     while True:

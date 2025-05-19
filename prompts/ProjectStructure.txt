@@ -5,56 +5,51 @@ User:
 Below is the complete, refined "Final Technical Assignment" containing only the technical‑functional requirements. Your task is to analyze this assignment and produce a single JSON dictionary that fully describes the project’s structure, including global rules, modules, files, dependencies, and AI hints for each file.
 
 Final Technical Assignment:
+```
 {task}
+```
 
 Requirements for your output:
 - **Output only** valid JSON (no markdown fences, no extra text).
 - Follow the schema illustrated in the example.
 - **Global rules** must include language, style guide (naming conventions and forbidden patterns).
-- **Modules** array must enumerate each logical module: name, description, and its files.
-- For each file, include: name, type (extension), role, deps (list of dependencies), ai_hints (must_include and test_requirements).
-- **Module & file granularity:** split functionality into as many files/modules as makes sense, but ensure each file’s theoretical code length is around 100–200 lines (maximum 300).
+- **Modules** array must enumerate each logical module: general name, description, and its files.
+- For each file, include: name, type (extension), dependencies (list of ONLY local includes), brief description.
+- **Module & file granularity:** split functionality into as many files/modules as makes sense and ensure each file's theoretical code length is around 100–200 lines (maximum 300).
+- Do not include test modules and files.
 - Reflect every technical detail from the assignment.
 
 Example of expected JSON structure:
 ```json
-{{
-  "project": {{
-    "global_rules": {{
-      "language": "C++20",
-      "style_guide": {{
-        "naming": {{
-          "classes": "PascalCase",
-          "methods": "camelCase"
-        }},
-        "forbidden_patterns": ["raw pointers", "C-style casts"]
-      }}
-    }},
-    "modules": [
-      {{
-        "name": "linear_algebra",
-        "description": "Matrix and vector operations",
-        "files": [
-          {{
-            "name": "Matrix",
-            "type": "hpp",
-            "role": "core_template",
-            "deps": ["Vector.hpp", "<algorithm>"],
-            "ai_hints": {{
-              "must_include": [
-                "template <typename T>",
-                "constexpr noexcept methods",
-                "SFINAE for numeric types"
-              ],
-              "test_requirements": [
-                "Coverage of operations +, *, transpose",
-                "Benchmark for 1000x1000 multiplication"
-              ]
-            }}
-          }}
-        ]
-      }}
+{
+ "project": {
+  "global_rules": {
+   "language": "C++23",
+   "style_guide": {
+    "naming": {
+     "classes": "PascalCase",
+     "methods": "camelCase",
+     "variables": "snake_case",
+     "namespaces": "snake_case",
+     "macros": "SCREAMING_SNAKE_CASE"
+    },
+    "forbidden_patterns": ["raw pointers", "C-style casts"]
+   }
+  },
+  "modules": [
+   {
+    "name": "linear_algebra",
+    "description": "Matrix and vector operations",
+    "files": [
+     {
+      "name": "Matrix",
+      "type": "hpp",
+      "deps": ["Vector.hpp", "<algorithm>"],
+      "description": "Template for N-dimensional matrix operations with SIMD support."
+     }
     ]
-  }}
-}}
+   }
+  ]
+ }
+}
 ```

@@ -15,6 +15,7 @@ Requirements for your output:
 - **Global rules** must include language, style guide (naming conventions and forbidden patterns).
 - **Modules** array must enumerate each logical module: general name, description, and its files.
 - For each file, include: name, type (extension), dependencies, brief description.
+- For each *.hpp file, there must be a *.cpp file if it is needed (for example, if it is not a template)
 - **Module & file granularity:** split functionality into as many files/modules as makes sense and ensure each file's theoretical code length is around 100–200 lines (maximum 300).
 - Do not include test modules and files!!!
 - Reflect every technical detail from the assignment.

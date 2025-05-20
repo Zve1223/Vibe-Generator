@@ -86,14 +86,29 @@ def create_project_tree() -> bool:
 @logged
 def write_files_instructions() -> bool:
     project_tree: ProjectTree = context['project_tree']
-    for name in project_tree:
+    for n, name in enumerate(project_tree):
         file = project_tree[name]
         context['target_file'] = name
+        log('{}/{} writing "{}" instruction...', n + 1, project_tree.total_files, name)
         response = ask(simply(prompt('FileRealizationInstruction')), 'file realization instruction writing')
         if write_to_file(str(project_path / file.path) + '.md', response) is False:
             return False
+        log('{}/{} files instructions were written', n + 1, project_tree.total_files)
+    return True
 
 
+@logged
+def write_file_implementation() -> bool:
+    project_tree: ProjectTree = context['project_tree']
+    for n, name in enumerate(project_tree):
+        file = project_tree[name]
+        context['target_file'] = name
+        log('{}/{} writing "{}" implementation...', n + 1, project_tree.total_files, name)
+        response = ask(simply(prompt('FileImplementation')), 'file implementation')
+        if write_to_file(str(project_path / file.path), response) is False:
+            return False
+        log('{}/{} files implementations were written', n + 1, project_tree.total_files)
+    return True
 
 
 def pipeline(*pipes: Callable) -> bool:

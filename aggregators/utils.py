@@ -167,6 +167,15 @@ def query_context(text: str) -> str:
             text = text.replace('{project_structure}', project_structure)
         else:
             pass  # TODO: error
+    if '{target_file}' in text:
+        text = text.replace('{target_file}', context['target_file'])
+    if '{realization_instruction}' in text:
+        project_tree: ProjectTree = context['project_tree']
+        realization_instruction = read_from_file(str(project_tree[context['target_file']].path) + '.md')
+        if realization_instruction is not None:
+            text = text.replace('{realization_instruction}', realization_instruction)
+        else:
+            pass  # TODO: error
     return text
 
 

@@ -8,8 +8,8 @@
 </system>
 
 <analysis_flow>
-1. EXTRACT {task} → technical requirements for target_file
-2. CROSS-REFERENCE {project_structure} → dependencies, naming rules
+1. EXTRACT [task] → technical requirements for target_file
+2. CROSS-REFERENCE [project_structure] → dependencies, naming rules
 3. GENERATE IMPLEMENTATION BLUEPRINT with:
    - Atomic function mapping
    - Dependency injection points
@@ -19,9 +19,19 @@
 </analysis_flow>
 
 <input>
-<task><![CDATA[{task}]]></task>
-<project_structure><![CDATA[{project_structure}]]></project_structure>
-<target_file>{target_file}</target_file>
+<task>
+```
+{task}
+```
+</task>
+<project_structure>
+```json
+{project_structure}
+```
+</project_structure>
+<target_file>
+{target_file}
+</target_file>
 </input>
 
 <output_rules>
@@ -105,12 +115,6 @@ OUTPUT:
   - math/Vector.hpp
 - external:
   - <immintrin.h> v2.0+
-
-#### style_enforcement
-- naming_rules: PascalCase_templates
-- forbidden_patterns:
-  - virtual_methods
-  - exception_flow
 
 #### optimization_hooks
 - LOOP_UNROLLING_MARKERS

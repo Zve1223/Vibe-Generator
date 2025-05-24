@@ -88,10 +88,10 @@ def build_cpp_compile_command(compiler_info: dict,
 
     cmd = [compiler]
 
-    cmd += compiler_info['flags']
+    cmd += compiler_info['flags'].split()
 
     if compiler_info['type'] != 'msvc':
-        std = f'-std={compiler["cpp_version"]}' if is_cpp else f'-std={compiler["c_version"]}'
+        std = f'-std={compiler_info["cpp_version"]}' if is_cpp else f'-std={compiler_info["c_version"]}'
         cmd.append(std)
     else:
         cmd += [

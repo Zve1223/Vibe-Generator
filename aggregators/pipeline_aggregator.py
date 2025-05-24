@@ -51,7 +51,7 @@ def specify_task() -> bool:
         answers.append(answer)
     log('The Q&A was completed in {} seconds!', now() - start_time)
     qa = '\n'.join(f'Q: {q[0]}\nA: {a}' for q, a in zip(questions, answers))
-    if write_to_file('Q&A.txt', qa) is False:
+    if write_to_file('Q&A.md', qa) is False:
         return False
     return True
 
@@ -69,10 +69,14 @@ def rewrite_task_for_ai() -> bool:
 def create_project_tree() -> bool:
     response = ask(simply(prompt('ProjectStructure')), 'project structure')
     if is_json(response) is False:
-        return False
+        response = response[response.find('```') + 3:response.rfind('```')].removeprefix('json').strip()
+        if is_json(response) is False:
+            err('Response is not in JSON format')
+            return False
     project_structure = json.loads(response)
     project_tree = ProjectTree(project_structure)
     if project_tree.has_cycle is True:
+        err('Project tree has cycle')
         return False
     context['project_structure'] = project_structure
     context['project_tree'] = project_tree
@@ -86,28 +90,40 @@ def create_project_tree() -> bool:
 @logged
 def write_files_instructions() -> bool:
     project_tree: ProjectTree = context['project_tree']
-    for n, name in enumerate(project_tree):
-        file = project_tree[name]
-        context['target_file'] = name
-        log('{}/{} writing "{}" instruction...', n + 1, project_tree.total_files, name)
-        response = ask(simply(prompt('FileRealizationInstruction')), 'file realization instruction writing')
-        if write_to_file(str(project_path / file.path) + '.md', response) is False:
-            return False
-        log('{}/{} files instructions were written', n + 1, project_tree.total_files)
+    counter = 0
+    for file in project_tree:
+        context['current_node'] = file
+        for is_header in (True, False):
+            counter += 1
+            name = file.name + get_ext(is_header, file.is_template)
+            path = Path(file.module) / file.name
+            context['current_file'] = name
+            log('{}/{} writing "{}" instruction...', counter, project_tree.total_files, name)
+            response = ask(simply(prompt('FileRealizationInstruction')), 'file realization instruction writing')
+            if write_to_file(str(project_path / path.with_suffix('.md')), response) is False:
+                return False
+            log('{}/{} files instructions were written', counter, project_tree.total_files)
     return True
 
 
 @logged
 def write_file_implementation() -> bool:
     project_tree: ProjectTree = context['project_tree']
-    for n, name in enumerate(project_tree):
-        file = project_tree[name]
-        context['target_file'] = name
-        log('{}/{} writing "{}" implementation...', n + 1, project_tree.total_files, name)
-        response = ask(simply(prompt('FileImplementation')), 'file implementation')
-        if write_to_file(str(project_path / file.path), response) is False:
-            return False
-        log('{}/{} files implementations were written', n + 1, project_tree.total_files)
+    counter = 0
+    for file in project_tree:
+        context['current_node'] = file
+        for is_header in (True, False):
+            counter += 1
+            name = file.name + get_ext(is_header, file.is_template)
+            path = Path(file.module) / name
+            context['current_file'] = name
+            log('{}/{} writing "{}" implementation...', counter, project_tree.total_files, name)
+            response = ask(simply(prompt('FileImplementation')), 'file implementation')
+            if '```' in response:
+                response = response[response.find('```') + 3:response.rfind('```')].removeprefix('cpp').strip()
+            if write_to_file(str(project_path / path), response) is False:
+                return False
+            log('{}/{} files implementations were written', counter, project_tree.total_files)
     return True
 
 
@@ -122,14 +138,15 @@ def pipeline(*pipes: Callable) -> bool:
                     if pipe() is False:
                         continue
                 except Exception as e:
-                    err('Unexpected error: {}', e)
+                    err('Unexpected error: {}', e, e=e)
                     errors[str(e)] = 1 if str(e) not in errors.keys() else errors[str(e)] + 1
                     if errors[str(e)] == 2:
-                        raise e
+                        traceback.print_exception(e)
+                        return False
                     continue
                 break
     except Exception as e:
-        aggregators.utils.err('FATAL ERROR: {}', e)
+        aggregators.utils.err('FATAL ERROR: {}', e, e=e)
         traceback.print_exc()
         success = False
     finally:

@@ -4,7 +4,7 @@ import typing
 import random
 import datetime
 from aggregators.config import *
-from aggregators.project_tree import ProjectTree
+from aggregators.project_tree import *
 
 P = typing.ParamSpec('P')
 R = typing.TypeVar('R')
@@ -21,6 +21,15 @@ def is_json(s: str) -> bool:
         return True
     except (json.JSONDecodeError, ValueError, AttributeError, TypeError):
         return False
+
+
+def get_ext(is_header: bool, is_template: bool) -> str:
+    if is_header is True:
+        return '.hpp'
+    elif is_template is True:
+        return '.ipp'
+    else:
+        return '.cpp'
 
 
 def get_http_proxies() -> str:
@@ -79,7 +88,9 @@ def wrn(msg: str, *args, **kwargs) -> str:
 
 
 @logging
-def err(msg: str, *args, **kwargs) -> str:
+def err(msg: str, *args, e: Exception = None, **kwargs) -> str:
+    if e is not None:
+        traceback.print_exception(e)
     model, msg = context['model'], msg.format(*args, **kwargs).strip()
     line = f'{model:<17} | ERR ' + ('---+' * remove_recursion(stack))[:-1] + '| ' + msg
     print(line)
@@ -88,11 +99,15 @@ def err(msg: str, *args, **kwargs) -> str:
 
 def logged(method: typing.Callable[P, R]) -> typing.Callable[P, R]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-        log(f'Entering the "{method.__name__}" function...')
-        stack.append(method)
-        result = method(*args, **kwargs)
-        stack.pop()
-        log(f'Exit from the "{method.__name__}" function')
+        try:
+            log(f'Entering the "{method.__name__}" function...')
+            stack.append(method)
+            result = method(*args, **kwargs)
+        except Exception as e:
+            raise e
+        finally:
+            stack.pop()
+            log(f'Exit from the "{method.__name__}" function')
         return result
 
     return wrapper
@@ -114,7 +129,7 @@ def read_from_file(path: str, absolute: bool = False) -> str | None:
         with open(str(path), 'r', encoding='UTF-8') as file:
             return file.read()
     except Exception as e:
-        err('Unexpected error while reading "{}" file:\n{}', path, e)
+        err('Unexpected error while reading "{}" file:\n{}', path, e, e=e)
         return None
 
 
@@ -131,7 +146,7 @@ def write_to_file(path: str, content: str, absolute: bool = False, *, mode: str 
         with open(path, mode, encoding='UTF-8') as file:
             file.write(content)
     except Exception as e:
-        err('Unknown error occurred while writing "{}" file:\n{}', path, e)
+        err('Unknown error occurred while writing "{}" file:\n{}', path, e, e=e)
         return False
     return True
 
@@ -145,7 +160,11 @@ def create_project_structure(project_config: dict, root_dir: str = '.') -> None:
         module_dir.mkdir(exist_ok=True)
         for file_info in module['files']:
             file_path = module_dir / file_info['name']
-            file_path.with_suffix(f'.{file_info["type"]}').touch()
+            if file_info['is_template'] is True:
+                file_path.with_suffix('.tpp').touch()
+            else:
+                file_path.with_suffix('.hpp').touch()
+                file_path.with_suffix('.cpp').touch()
 
 
 def query_context(text: str) -> str:
@@ -156,7 +175,7 @@ def query_context(text: str) -> str:
         else:
             pass  # TODO: error
     if '{QnA}' in text:
-        QnA = read_from_file('Q&A.txt')
+        QnA = read_from_file('Q&A.md')
         if QnA is not None:
             text = text.replace('{QnA}', QnA)
         else:
@@ -168,19 +187,41 @@ def query_context(text: str) -> str:
         else:
             pass  # TODO: error
     if '{target_file}' in text:
-        text = text.replace('{target_file}', context['target_file'])
+        text = text.replace('{target_file}', context['current_file'])
     if '{realization_instruction}' in text:
-        project_tree: ProjectTree = context['project_tree']
-        realization_instruction = read_from_file(str(project_tree[context['target_file']].path) + '.md')
+        name: str = context['current_file']
+        node: FileNode = context['current_node']
+        path = Path(node.module) / name
+        realization_instruction = read_from_file(str((project_path / path).with_suffix('.md')))
         if realization_instruction is not None:
             text = text.replace('{realization_instruction}', realization_instruction)
         else:
             pass  # TODO: error
+    if '{dependencies}' in text:
+        project_tree: ProjectTree = context['project_tree']
+        name: str = context['current_node'].name
+        dependencies = project_tree.get_subtree(name)[::-1]
+        if not dependencies:
+            text = text.replace('{dependencies}', '')
+        else:
+            codes = list[str]()
+            for file in dependencies:
+                name = file.name + '.hpp'
+                path = Path(file.module) / name
+                code = read_from_file(str(project_path / path))
+                if code is not None:
+                    codes.append(code)
+                else:
+                    codes.append('')  # TODO: error
+            result = '## Dependencies\n'
+            for file, code in zip(dependencies, codes):
+                result += f'### {file.module}/{file.name}.hpp\n```cpp\n{code.strip()}\n```\n'
+            text = text.replace('{dependencies}', result)
     return text
 
 
 def prompt(name: str) -> str | None:
-    path = Path(sys.argv[0]).parent / 'prompts' / (name + '.txt')
+    path = Path(sys.argv[0]).parent / 'prompts' / (name + '.md')
     if not path.exists() or not path.is_file():
         return None
     with open(path, 'r', encoding='UTF-8') as file:
@@ -210,6 +251,7 @@ MESSAGES:
         wrn('can not write answer in common format: {}', e)
         traceback.print_exc()
         to_save = json.dumps(response, indent=4, ensure_ascii=False)
-    write_to_file(path, to_save)
+    if write_to_file(path, to_save) is False:
+        return False
     log('Answer "{}" was saved successfully!', response['id'].removeprefix('chat_'))
     return True

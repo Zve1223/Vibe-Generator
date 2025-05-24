@@ -19,7 +19,7 @@ def next_model(messages: list[dict[str: str, str: str]]) -> requests.Response:
     @logged
     def search_cycle() -> requests.Response | None:
         for model in utils.all_models[utils.context['model'] == utils.all_models[0]:]:
-            utils.model = model
+            utils.context['model'] = model
             log('Trying to get response from {}...', model)
             send = {'model': model, 'request': {'messages': messages}}
             response_ = requests.post(api_link, json=send)

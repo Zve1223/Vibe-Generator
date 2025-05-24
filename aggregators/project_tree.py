@@ -1,223 +1,158 @@
-from dataclasses import dataclass
-from typing import Tuple, Dict, FrozenSet, Iterator
+from dataclasses import dataclass, replace
+from typing import Tuple, Dict, FrozenSet, Iterator, List, Deque
 from functools import cached_property
 from collections import deque
 
 
+@dataclass(frozen=True)
+class FileNode:
+    __slots__ = ('name', 'is_template', 'module', 'dependencies', 'dependents', 'depth')
+    name: str
+    is_template: bool
+    module: str
+    dependencies: FrozenSet[str]
+    dependents: FrozenSet[str]
+    depth: int
+
+
 class ProjectTree:
-    __slots__ = ('_project_data', '_nodes', '__dict__')
-
-    @dataclass(frozen=True)
-    class _Node:
-        __slots__ = ('name', 'file_type', 'path', 'dependencies', 'dependents', 'depth')
-        name: str
-        file_type: str
-        path: str  # Новое поле с путем
-        dependencies: FrozenSet['ProjectTree._Node']
-        dependents: FrozenSet['ProjectTree._Node']
-        depth: int
-
-        @property
-        def is_leaf(self) -> bool:
-            return all(dep.is_external for dep in self.dependencies)
-
-        @property
-        def is_external(self) -> bool:
-            return self.name.startswith('<')
+    __slots__ = ('_project_data', 'FileNodes', '_dependency_graph', '__dict__')
 
     def __init__(self, project_data: Dict):
         self._project_data = project_data
-        self._nodes = self._build_nodes()
+        self._nodes, self._dependency_graph = self._build_graph()
 
-    def _build_nodes(self) -> Dict[str, _Node]:
-        node_map = {}
+    def _build_graph(self) -> Tuple[Dict[str, FileNode], Dict[str, List[str]]]:
+        nodes = {}
+        dependency_graph = {}
 
-        # 1. Создаем узлы с ключами в формате "filename.ext"
-        for module in self._project_data["project"]["modules"]:
-            module_name = module["name"]
-            for file_info in module["files"]:
-                file_name = file_info["name"]
-                file_ext = file_info["type"]
-                file_key = f"{file_name.removesuffix('.' + file_ext)}.{file_ext}"
+        file_names = set()
+        for module in self._project_data['project']['modules']:
+            for file in module['files']:
+                file_names.add(file['name'])
+        for module in self._project_data['project']['modules']:
+            module_name = module['name']
+            for file_info in module['files']:
+                if file_info['name'] in nodes:
+                    continue
+                name = file_info['name']
+                is_template = file_info['is_template']
+                deps = [d for d in file_info['deps'] if d in file_names]
 
-                node = self._Node(
-                    name=file_name,
-                    file_type=file_ext,
-                    path=f"./{module_name}/{file_key}",
-                    dependencies=frozenset(),
+                nodes[name] = FileNode(
+                    name=name,
+                    is_template=is_template,
+                    module=module_name,
+                    dependencies=frozenset(deps),
                     dependents=frozenset(),
                     depth=0
                 )
-                node_map[file_key] = {  # Ключ только имя файла
-                    "node": node,
-                    "deps": [d.split('/')[-1] for d in file_info.get("deps", [])],  # Оставляем только имена
-                    "module": module_name
-                }
 
-        # 2. Строим зависимости
-        resolved_nodes = {}
-        for file_key, info in node_map.items():
-            dependencies = []
-            for dep_name in info["deps"]:
-                if dep_name in node_map:
-                    dependencies.append(node_map[dep_name]["node"])
+        for node in nodes.values():
+            dependency_graph[node.name] = list(node.dependencies)
 
-            resolved_nodes[file_key] = self._Node(
-                name=info["node"].name,
-                file_type=info["node"].file_type,
-                path=info["node"].path,
-                dependencies=frozenset(dependencies),
-                dependents=frozenset(),
-                depth=0
-            )
+        for node_name, deps in dependency_graph.items():
+            for dep in deps:
+                nodes[dep] = replace(
+                    nodes[dep],
+                    dependents=nodes[dep].dependents | {node_name}
+                )
 
-        # 3. Обновление обратных зависимостей
-        for file_key, node in resolved_nodes.items():
-            for dep in node.dependencies:
-                dep_node = resolved_nodes.get(dep.name)
-                if dep_node:
-                    resolved_nodes[dep.name] = self._Node(
-                        name=dep_node.name,
-                        file_type=dep_node.file_type,
-                        path=dep_node.path,
-                        dependencies=dep_node.dependencies,
-                        dependents=dep_node.dependents | {node},
-                        depth=dep_node.depth
-                    )
-        return resolved_nodes
+        return nodes, dependency_graph
+
+    @cached_property
+    def _in_degree(self) -> Dict[str, int]:
+        return {node: len(deps) for node, deps in self._dependency_graph.items()}
+
+    @cached_property
+    def roots(self) -> Tuple[FileNode, ...]:
+        return tuple(
+            self._nodes[node]
+            for node, count in self._in_degree.items()
+            if count == 0
+        )
+
+    def __iter__(self) -> Iterator[FileNode]:
+        in_degree = self._in_degree.copy()
+        queue: Deque[str] = deque([node for node, degree in in_degree.items() if degree == 0])
+        result: List[FileNode] = []
+
+        while queue:
+            current = queue.popleft()
+            result.append(self._nodes[current])
+            for dependent in self._nodes[current].dependents:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
+
+        return iter(result)
 
     @cached_property
     def has_cycle(self) -> bool:
-        visited = set()
-        recursion_stack = set()
-        cycle_found = False
+        in_degree = self._in_degree.copy()
+        queue: Deque[str] = deque([node for node, degree in in_degree.items() if degree == 0])
+        count = 0
 
-        def dfs(node):
-            nonlocal cycle_found
-            if node in recursion_stack:
-                cycle_found = True
-                return
-            if node in visited:
-                return
+        while queue:
+            current = queue.popleft()
+            count += 1
+            for dependent in self._nodes[current].dependents:
+                in_degree[dependent] -= 1
+                if in_degree[dependent] == 0:
+                    queue.append(dependent)
 
-            visited.add(node)
-            recursion_stack.add(node)
+        return count != len(self._nodes)
 
-            for dep in node.dependencies:
-                if not dep.is_external:
-                    dfs(dep)
+    def get_subtree(self, name: str) -> List[FileNode]:
+        if name not in self._nodes:
+            raise KeyError(f"Node '{name}' not found.")
 
-            recursion_stack.remove(node)
+        # 1. Собираем ВСЕ узлы поддерева (name + все его зависимости)
+        subtree = set()
+        stack = [name]
+        while stack:
+            current = stack.pop()
+            if current not in subtree:
+                subtree.add(current)
+                # Добавляем зависимости текущего узла
+                stack.extend(self._nodes[current].dependencies)
 
-        for root in self.roots:
-            dfs(root)
-            if cycle_found:
-                break
+        # 2. Строим in_degree для ПОДДЕРЕВА
+        in_degree = {node: 0 for node in subtree}
+        for node in subtree:
+            for dep in self._nodes[node].dependencies:
+                if dep in subtree:
+                    in_degree[node] += 1  # Учитываем только зависимости внутри поддерева
 
-        return cycle_found
+        # 3. Алгоритм Кана для поддерева
+        queue = deque([node for node, cnt in in_degree.items() if cnt == 0])
+        result = []
+        while queue:
+            current = queue.popleft()
+            result.append(self._nodes[current])
+            # Обходим ЗАВИСИМЫЕ узлы (dependents)
+            for dep_node in self._nodes[current].dependents:
+                if dep_node in subtree:
+                    in_degree[dep_node] -= 1
+                    if in_degree[dep_node] == 0:
+                        queue.append(dep_node)
 
-    @cached_property
-    def total_files(self) -> int:
-        return len(self._nodes)
+        # Проверка на циклы в поддереве
+        if len(result) != len(subtree):
+            raise ValueError("Subtree contains cycles")
 
-    @cached_property
-    def depth(self) -> int:
-        return max((node.depth for node in self._nodes.values()), default=0)
+        return result
 
     @cached_property
     def module_names(self) -> Tuple[str, ...]:
         return tuple(module['name'] for module in self._project_data['project']['modules'])
 
     @cached_property
-    def external_dependencies_count(self) -> int:
-        return sum(1 for node in self._nodes.values() for dep in node.dependencies if dep.is_external)
-
-    @cached_property
-    def implementation_order(self) -> Tuple[str, ...]:
-        visited = set()
-        order = []
-
-        def dfs(node):
-            if node not in visited:
-                visited.add(node)
-                for dep in sorted(node.dependencies, key=lambda x: (x.file_type, x.name)):
-                    if not dep.is_external:
-                        dfs(dep)
-                order.append(node)
-
-        for root in sorted(self.roots, key=lambda x: x.name):
-            dfs(root)
-
-        return tuple(node.name for node in order)
-
-    @cached_property
-    def roots(self) -> Tuple[_Node, ...]:
-        return tuple(
-            node for node in self._nodes.values()
-            if not node.dependents or all(d.is_external for d in node.dependencies)
-        )
-
-    @property
-    def nodes(self) -> Tuple[_Node, ...]:
-        return tuple(self._nodes.values())
-
-    def __iter__(self) -> Iterator[str]:
-        visited = set()
-        hpp_queue = deque()
-        order = []
-
-        # 1. Инициализация in_degree для всех узлов
-        in_degree = {node: 0 for node in self._nodes.values()}
-
-        # 2. Подсчёт зависимостей
+    def total_files(self) -> int:
+        count = 0
         for node in self._nodes.values():
-            for dep in node.dependencies:
-                if not dep.is_external and dep.file_type == 'hpp' and dep in in_degree:
-                    in_degree[node] += 1
+            count += 1 if node.is_template is True else 2
+        return count
 
-        # 3. Инициализация очереди
-        for node in self._nodes.values():
-            if node.file_type == 'hpp' and in_degree.get(node, 0) == 0:
-                hpp_queue.append(node)
-
-        # 4. Обработка .hpp
-        while hpp_queue:
-            node = hpp_queue.popleft()
-            if node in visited:
-                continue
-
-            visited.add(node)
-            order.append(node.name)
-
-            for dependent in node.dependents:
-                if dependent.file_type != 'hpp':
-                    continue
-
-                # Проверка существования ключа
-                if dependent in in_degree:
-                    in_degree[dependent] -= 1
-                    if in_degree[dependent] == 0:
-                        hpp_queue.append(dependent)
-
-        # 5. Добавление .cpp файлов
-        cpp_files = {}
-        for node in self._nodes.values():
-            if node.file_type == 'cpp':
-                base = node.name.split('.')[0]
-                cpp_files[base] = node.name
-
-        # 6. Формирование финального порядка
-        result = []
-        for name in order:
-            result.append(name)
-            base = name.split('.')[0]
-            if base in cpp_files:
-                result.append(cpp_files.pop(base))
-
-        # 7. Оставшиеся .cpp
-        result.extend(cpp_files.values())
-
-        return iter(result)
-
-    def __getitem__(self, name: str) -> _Node:
+    def __getitem__(self, name: str) -> FileNode:
         return self._nodes[name]
